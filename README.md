@@ -1,10 +1,12 @@
 
 
-# **In-AAP Automated CI/CD for Ansible Execution Environments** 
+# **DRAFT: In-AAP Automated CI/CD for Ansible Execution Environments** 
 
-This repository provides a complete workflow for automating the Continuous Integration and Continuous Delivery (CI/CD) lifecycle of Ansible Automation Platform (AAP) Execution Environments (EEs).
+This repository provides a drafted workflow for CI/CD of AAP Execution Environments (EEs) (for AAP 2.4).
 
-It's important to note that this framework was originally designed and implemented for **AAP 2.4**.
+## DISCLAIMER
+
+The repository is provided “as is”, without warranty of any kind. It is likely outdated and incomplete. 
 
 ## **I. Building Execution Environments (General Concepts)**
 
