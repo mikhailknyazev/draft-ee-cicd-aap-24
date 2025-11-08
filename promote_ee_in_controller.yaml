@@ -1,0 +1,55 @@
+- name: Promote EE in Controller
+  hosts: all
+  tasks:
+
+    - name: Ensure controller_execution_environments and test_image_name are defined and non-empty
+      fail:
+        msg: >-
+          The variable {{
+            'controller_execution_environments' if controller_execution_environments is not defined else 'test_image_name' 
+          }} is undefined or empty.
+      when: >-
+            controller_execution_environments is not defined or 
+            test_image_name is not defined or 
+            test_image_name | length == 0
+
+    - name: What is being promoted?
+      ansible.builtin.debug:
+        msg: "test_image_name: {{ test_image_name }}"
+
+# Note: the variable "controller_execution_environments" is expected to be defined in the workflow that calls this job template.
+#
+# controller_execution_environments:
+#   - name: TEST Minimal EE Custom
+#     image: >-
+#       registry.dev.cicd.com.au/cicdcustom/ee-minimal-24-custom:20251108T040098
+#   - name: TEST Supported EE Custom
+#     image: >-
+#       registry.dev.cicd.com.au/cicdcustom/ee-supported-24-custom:20251108T040098
+
+#     Example:  test_image_name: TEST Minimal EE Custom
+
+    - name: Find the matching EE
+      ansible.builtin.set_fact:
+        effective_promoted_image_path: "{{ item.image }}" # registry.dev.cicd.com.au/cicdcustom/ee-minimal-24-custom:20251108T040098
+        effective_promoted_image_name: "{{ item.name.split(' ', 1)[1] }}" # "TEST Minimal EE Custom" -->> "Minimal EE Custom"
+      loop: "{{ controller_execution_environments }}"
+      when: item.name == test_image_name
+
+    - name: Ensure effective_promoted_image_path and effective_promoted_image_name are defined and not empty
+      ansible.builtin.fail:
+        msg: >-
+          One or both of the variables effective_promoted_image_path ({{ effective_promoted_image_path | default('undefined') }})
+          or effective_promoted_image_name ({{ effective_promoted_image_name | default('undefined') }}) are empty or undefined.
+      when: >-
+          effective_promoted_image_path is not defined or effective_promoted_image_path == '' or
+          effective_promoted_image_name is not defined or effective_promoted_image_name == ''
+
+    - name: Print the effective values
+      ansible.builtin.debug:
+        msg: "effective_promoted_image_name: {{ effective_promoted_image_name }} ; effective_promoted_image_path: {{ effective_promoted_image_path }}"
+
+    - name: Update Execution Environment Version in Controller with new version
+      ansible.controller.execution_environment:
+        name: "{{ effective_promoted_image_name }}"
+        image: "{{ effective_promoted_image_path }}"

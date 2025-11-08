@@ -1,0 +1,214 @@
+---
+- name: Configure AAP 2.4 with EE CI/CD Workflow
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    controller_hostname: https://controller-aap24.dev.cicd.com.au/ 
+    controller_username: controller_admin
+    controller_password: MyControllerPassword
+    controller_validate_certs: false
+    controller_configuration_async_delay: 3
+    controller_projects:
+      - name: EE build project
+        scm_type: git
+        scm_url: https://github.com/mikhailknyazev/draft-ee-cicd-aap-24.git
+        scm_branch: main
+        scm_update_on_launch: true
+        credential: readonly all
+        description: EE build project
+        organization: Default
+        wait: true
+        update: false
+
+    controller_inventories:
+      - name: Ansible Builder
+        organization: Default
+      - name: Basic EE Test Environment
+        organization: Default
+
+    controller_hosts:
+
+      - name: ansible-builder-host 
+        inventory: Ansible Builder
+        enabled: true
+        variables:
+          ansible_host: builder.dev.cicd.com.au
+          ansible_user: service_user
+          ansible_connection: ssh
+          ansible_ssh_extra_args: ' -o StrictHostKeyChecking=no '
+
+      - name: test-host # test-host-aap24.dev.cicd.com.au
+        inventory: Basic EE Test Environment
+        enabled: true
+        variables:
+          ansible_host: builder.dev.cicd.com.au # Note: just for dev needs, it is the same as actual builder host
+          ansible_user: service_user
+          ansible_connection: ssh
+          ansible_ssh_extra_args: ' -o StrictHostKeyChecking=no '    
+
+    controller_templates:
+      - name: Initial common refresh
+        job_type: run
+        inventory: localhost # Blank (localhost only)
+        # credentials:
+        #   - Controller Credential
+        project: EE build project
+        execution_environment: CICD Workbench EE
+        playbook: hello_world.yml # Note: For the ideas of what it should do, see roles "sync_ee" and "sync_repos" here:  https://github.com/shadowman-lab/Ansible-PAH/tree/main/roles
+      - name: Build and Publish EE Images
+        job_type: run
+        inventory: Ansible Builder
+        credentials:
+          - managed-on-prem
+        # credentials:
+        #   - Execution Build Credentials
+        project: EE build project
+        execution_environment: CICD Workbench EE
+        playbook: build_and_publish_ee_images.yml
+        # extra_vars:
+        #   ee_registry_dest: pah-aap24.dev.cicd.com.au
+        #   ee_builder_dir_clean: true  
+      - name: Push built images from PAH to AC controller
+        job_type: run
+        inventory: localhost
+        credentials:
+          - AC
+        project: EE build project
+        execution_environment: CICD Workbench EE
+        playbook: push_built_images_to_controller.yaml
+
+      - name: Test EE ee-minimal-24-custom
+        job_type: run
+        inventory: Basic EE Test Environment
+        credentials:
+          - managed-on-prem
+        project: EE build project
+        execution_environment: Automation Hub Minimal execution environment # NOTE: it is meant to be updated for testing automatically
+        playbook: test_ee_minimal_24_custom.yaml
+
+      - name: Test EE ee-supported-24-custom
+        job_type: run
+        inventory: Basic EE Test Environment
+        credentials:
+          - managed-on-prem
+        project: EE build project
+        execution_environment: Automation Hub Default execution environment # NOTE: it is meant to be updated for testing automatically
+        playbook: test_ee_supported_24_custom.yaml
+
+      - name: Promote EE in Controller
+        job_type: run
+        inventory: localhost
+        credentials:
+          - AC
+        project: EE build project
+        execution_environment: CICD Workbench EE
+        playbook: promote_ee_in_controller.yaml
+        # NOTE: We have the "ask_variables_on_launch: true" below, 
+        #       so we can pass the "test_image_name" from the workflow node.
+        ask_variables_on_launch: true
+
+    controller_workflows:
+      - name: EE Image Lifecycle Workflow
+        workflow_nodes:
+          - identifier: Initial common refresh
+            unified_job_template:
+              name: Initial common refresh
+              type: job_template
+              organization:
+                name: Default
+            related:
+              success_nodes:
+                - identifier: Build and Publish EE Images
+          - identifier: Build and Publish EE Images
+            unified_job_template:
+              name: Build and Publish EE Images
+              type: job_template
+              organization:
+                name: Default             
+            related:
+              success_nodes:
+                - identifier: Push built images from PAH to AC controller
+          - identifier: Push built images from PAH to AC controller
+            unified_job_template:
+              name: Push built images from PAH to AC controller
+              type: job_template
+              organization:
+                name: Default
+            related:
+              success_nodes:
+                - identifier: Test EE ee-minimal-24-custom
+                - identifier: Test EE ee-supported-24-custom          
+
+          # Test, Approve, push to Controller for: ee-minimal-24-custom
+
+          - identifier: Test EE ee-minimal-24-custom
+            unified_job_template:
+              name: Test EE ee-minimal-24-custom
+              type: job_template
+              organization:
+                name: Default
+            related:
+              success_nodes:
+                - identifier: Manual Approval for ee-minimal-24-custom
+
+          - identifier: Manual Approval for ee-minimal-24-custom
+            unified_job_template:
+              name:  Manual Approval for ee-minimal-24-custom
+              timeout: 900
+              type: workflow_approval
+              organization:
+                name: Default
+            related:
+              success_nodes:
+                - identifier: Promote ee-minimal-24-custom in Controller
+
+          - identifier: Promote ee-minimal-24-custom in Controller
+            extra_data:
+               test_image_name: TEST Minimal EE Custom
+            unified_job_template:
+              name: Promote EE in Controller
+              type: job_template
+              organization:
+                name: Default    
+
+         # Test, Approve, push to Controller for: ee-supported-24-custom
+
+          - identifier: Test EE ee-supported-24-custom
+            unified_job_template:
+              name: Test EE ee-supported-24-custom
+              type: job_template
+              organization:
+                name: Default
+            related:
+              success_nodes:
+                - identifier: Manual Approval for ee-supported-24-custom
+
+          - identifier: Manual Approval for ee-supported-24-custom
+            unified_job_template:
+              name:  Manual Approval for ee-supported-24-custom
+              timeout: 900
+              type: workflow_approval
+              organization:
+                name: Default
+            related:
+              success_nodes:
+                - identifier: Promote ee-supported-24-custom in Controller
+
+          - identifier: Promote ee-supported-24-custom in Controller
+            extra_data:
+               test_image_name: TEST Supported EE Custom
+            unified_job_template:
+              name: Promote EE in Controller
+              type: job_template
+              organization:
+                name: Default         
+
+  roles:
+    # - infra.controller_configuration.credential_types
+    # - infra.controller_configuration.credentials
+    - infra.controller_configuration.inventories
+    - infra.controller_configuration.hosts
+    - infra.controller_configuration.projects
+    - infra.controller_configuration.job_templates
+    - infra.controller_configuration.workflow_job_templates

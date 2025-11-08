@@ -1,0 +1,69 @@
+---
+- name: Build and Publish EE Images
+  hosts: all       # Note: The "builder" machine should have the "ansible-builder v3" and podman installed. 
+                   #       So there should be a special inventory
+                   #       E.g.: ansible-builder-aap24.dev.cicd.com.au  
+
+  vars:
+    ee_version: 3
+    ee_create_controller_def: true
+    ee_builder_dir_clean: false
+    ee_builder_dir: "/home/service_user/ansible/builder/lifecycle/"
+    # ee_galaxy_keyring: "/certs/fullkeyring.kbx" # Note: revise
+    ee_update_base_images: false
+
+    # Global default
+    ee_base_image: registry.dev.cicd.com.au:443/ansible-automation-platform-24/ee-minimal-rhel9:latest
+    
+    ee_prune_images: false
+    ee_stream: downstream
+    ee_pull_collections_from_hub: true
+    ee_verbosity: 1
+    ee_registry_dest: registry.dev.cicd.com.au/cicdcustom
+    ee_base_registry_username: registry_admin
+    ee_base_registry_password: MyRegistryPassword
+    ee_registry_username: registry_admin
+    ee_registry_password: MyRegistryPassword
+    ee_validate_certs: false
+    ee_ah_host: "registry.dev.cicd.com.au"
+    ee_ah_token: "YOUR_AUTOMATION_HUB_TOKEN"
+    
+    ee_list:
+      - name: ee-minimal-24-custom
+        alt_name: TEST Minimal EE Custom
+        tag: "{{ ansible_date_time.iso8601_basic_short }}"
+        base_image: registry.dev.cicd.com.au:443/ansible-automation-platform-24/ee-minimal-rhel9:latest
+      - name: ee-supported-24-custom
+        alt_name: TEST Supported EE Custom
+        tag: "{{ ansible_date_time.iso8601_basic_short }}"
+        base_image: registry.dev.cicd.com.au:443/ansible-automation-platform-24/ee-supported-rhel9:latest
+  tasks:
+
+    - name: Ensure the destination directory exists
+      ansible.builtin.file:
+        path: "{{ ee_builder_dir }}"
+        state: directory
+        owner: service_user
+        group: service_user
+        mode: '0755'
+
+    - name: Build and publish EE images
+      include_role:
+        name: infra.ee_utilities.ee_builder
+
+
+################### THE FOLLOWING WILL EFFECTIVE SKIP ACTUAL BUILDING -- for dev purposes  ################### 
+
+  # tasks:
+  #   - name: TEMP Set stats for use in another workflow node
+  #     ansible.builtin.set_stats:
+  #       data:
+  #         controller_execution_environments: "{{ controller_execution_environments }}"
+  #     vars:    
+  #       controller_execution_environments:
+  #         - name: TEST Minimal EE Custom
+  #           image: >-
+  #             registry.dev.cicd.com.au/cicdcustom/ee-minimal-24-custom:20251108T040098
+  #         - name: TEST Supported EE Custom
+  #           image: >-
+  #             registry.dev.cicd.com.au/cicdcustom/ee-supported-24-custom:20251108T040098

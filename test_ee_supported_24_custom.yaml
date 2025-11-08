@@ -1,0 +1,6 @@
+- name: Hello World
+  hosts: all
+  tasks:
+    - name: Hello Message
+      debug:
+        msg: "Hello World from test_ee_supported_24_custom.yaml !"
